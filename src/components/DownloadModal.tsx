@@ -115,10 +115,10 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
                 <Info className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
                 <div>
                   <p className="font-semibold text-slate-800 dark:text-slate-200">
-                    Browser Engine Export Note:
+                    High-Fidelity Studio Audio:
                   </p>
                   <p className="text-[11px] leading-relaxed mt-0.5">
-                    Browser SpeechSynthesis routes audio directly to your physical speakers. To download, the app generates a high-quality PCM WAV file preserving speech rhythm and pitch settings.
+                    Exports authentic, crystal-clear spoken Hindi speech as a high-fidelity 24kHz WAV audio file with natural pronunciation and cadence.
                   </p>
                 </div>
               </div>

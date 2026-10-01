@@ -154,23 +154,24 @@ export default function App() {
       ];
       setVoices(combinedVoices);
 
-      // Select default browser voice
-      const defaultBrowserVoice =
-        voiceData.browserVoices.find((v) => v.isDefault) || voiceData.browserVoices[0];
+      // Select default voice only if current voiceId is missing or not present in voices
+      setSettings((prev) => {
+        const voiceExists = combinedVoices.some((v) => v.id === prev.voiceId);
+        if (voiceExists) {
+          return prev;
+        }
 
-      if (defaultBrowserVoice && (!settings.voiceId || settings.voiceId.startsWith('cloud_') && settings.provider === 'browser')) {
-        setSettings((prev) => ({
+        const defaultVoice =
+          combinedVoices.find((v) => v.provider === 'browser' && v.isDefault) ||
+          combinedVoices.find((v) => v.provider === 'browser') ||
+          combinedVoices[0];
+
+        return {
           ...prev,
-          provider: 'browser',
-          voiceId: defaultBrowserVoice.id,
-        }));
-      } else if (!settings.voiceId && combinedVoices.length > 0) {
-        const fallbackVoice = combinedVoices.find((v) => v.isDefault) || combinedVoices[0];
-        setSettings((prev) => ({
-          ...prev,
-          voiceId: fallbackVoice.id,
-        }));
-      }
+          voiceId: defaultVoice ? defaultVoice.id : prev.voiceId,
+          provider: defaultVoice ? defaultVoice.provider : prev.provider,
+        };
+      });
 
       if (!initResult.browserSupported) {
         setErrorMessage(
@@ -200,8 +201,20 @@ export default function App() {
     ttsManager.stop();
     ttsManager.setProvider(providerType);
     setSettings((prev) => {
-      // Pick appropriate voice for this provider
-      const providerVoice = voices.find((v) => v.provider === providerType);
+      // If currently selected voice already belongs to this provider, keep it!
+      const currentVoice = voices.find((v) => v.id === prev.voiceId);
+      if (currentVoice && currentVoice.provider === providerType) {
+        return {
+          ...prev,
+          provider: providerType,
+        };
+      }
+
+      // Otherwise pick the default or first voice for this provider
+      const providerVoice =
+        voices.find((v) => v.provider === providerType && v.isDefault) ||
+        voices.find((v) => v.provider === providerType);
+
       return {
         ...prev,
         provider: providerType,
@@ -358,17 +371,32 @@ export default function App() {
         String(err?.message || '').includes('RESOURCE_EXHAUSTED');
 
       if (isQuota) {
-        handleSelectProvider('browser');
+        const browserVoice = voices.find((v) => v.provider === 'browser');
+        const fallbackVoiceId = browserVoice ? browserVoice.id : 'browser_preset_female';
+
+        setSettings((prev) => ({
+          ...prev,
+          provider: 'browser',
+          voiceId: fallbackVoiceId,
+        }));
+
         setErrorMessage(
           'Cloud rate limit reached. Automatically switched to 100% Free & Unlimited Browser Speech. Starting playback...'
         );
         setErrorType('info');
 
+        // Auto-dismiss the notice after 4.5s
+        setTimeout(() => {
+          setErrorMessage((curr) =>
+            curr?.includes('Cloud rate limit reached') ? null : curr
+          );
+        }, 4500);
+
         // Automatically retry with Browser TTS so the user doesn't even have to click again
         try {
           await ttsManager.speak({
             text: trimmed,
-            settings: { ...settings, provider: 'browser' },
+            settings: { ...settings, provider: 'browser', voiceId: fallbackVoiceId },
             onStart: () => {
               setHasGenerated(true);
               setPlaybackState((prev) => ({
@@ -663,12 +691,17 @@ export default function App() {
                 voices={voices}
                 selectedVoiceId={settings.voiceId}
                 onSelectVoice={(voiceId) => {
-                  setSettings((prev) => ({ ...prev, voiceId }));
-                  // Auto-switch provider if selecting cloud vs browser voice
-                  const v = voices.find((item) => item.id === voiceId);
-                  if (v && v.provider !== settings.provider) {
-                    handleSelectProvider(v.provider);
-                  }
+                  const targetVoice = voices.find((item) => item.id === voiceId);
+                  const targetProvider: ProviderType =
+                    targetVoice?.provider || (voiceId.startsWith('cloud_') ? 'cloud' : 'browser');
+
+                  setSettings((prev) => ({
+                    ...prev,
+                    voiceId,
+                    provider: targetProvider,
+                  }));
+
+                  ttsManager.setProvider(targetProvider);
                 }}
                 onPreviewVoice={handlePreviewVoice}
                 hasNativeHindi={hasNativeHindi}

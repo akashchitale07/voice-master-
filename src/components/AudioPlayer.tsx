@@ -11,6 +11,7 @@ import {
   Sparkles,
   Info,
   Check,
+  Clock,
 } from 'lucide-react';
 import { PlaybackState, TTSSettings } from '../types/tts';
 import { formatTime } from '../utils/hindiUtils';
@@ -54,6 +55,22 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
 
   const { isPlaying, isPaused, currentTime, duration, isGenerating } = playbackState;
 
+  // Dynamic estimated reading duration based on word count & playback speed
+  // Standard speech reading rate is ~130 words per minute at 1.0x speed
+  const words = (text.trim().match(/[\S]+/g) || []).length;
+  const effectiveWpm = 130 * Math.max(0.5, Math.min(2.5, settings.speed || 1.0));
+  const estimatedSeconds = words > 0 ? Math.max(1, Math.round((words / effectiveWpm) * 60)) : 0;
+
+  const getEstimatedReadText = () => {
+    if (words === 0) return '0s read';
+    if (estimatedSeconds < 60) return `${estimatedSeconds}s read`;
+    const mins = Math.floor(estimatedSeconds / 60);
+    const secs = estimatedSeconds % 60;
+    if (secs === 0) return `${mins} min read`;
+    if (mins < 10 && secs > 0) return `${mins}m ${secs}s read`;
+    return `${Math.round(estimatedSeconds / 60)} min read`;
+  };
+
   // Toggle Mute
   const handleToggleMute = () => {
     if (isMuted) {
@@ -79,13 +96,24 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
             <span className={`w-3.5 h-3.5 rounded-full ${isPlaying ? 'bg-emerald-500' : isPaused ? 'bg-amber-500' : 'bg-slate-400'}`} />
           </div>
           <div>
-            <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <span>Hindi Speech Player</span>
+            <div className="flex flex-wrap items-center gap-2">
+              <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                <span>Hindi Speech Player</span>
+              </h4>
               <span className="text-[11px] font-normal px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
                 {settings.provider === 'cloud' ? '✨ Neural Cloud' : '🎙️ Native Browser'}
               </span>
-            </h4>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {words > 0 && (
+                <span
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/70 px-2 py-0.5 rounded-md border border-indigo-200/60 dark:border-indigo-800/60"
+                  title={`Estimated reading duration: ${words.toLocaleString()} words at ${settings.speed}x speed`}
+                >
+                  <Clock className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+                  <span>Est. {getEstimatedReadText()}</span>
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               {isPlaying
                 ? 'Playing generated speech...'
                 : isPaused
@@ -124,9 +152,16 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
         </div>
         <div className="flex justify-between items-center text-xs font-mono font-medium text-slate-500 dark:text-slate-400 mt-1.5">
           <span>{formatTime(currentTime)}</span>
-          <span className="text-[11px] text-slate-400">
-            {progressPercent.toFixed(0)}%
-          </span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] text-slate-400">
+              {progressPercent.toFixed(0)}%
+            </span>
+            {words > 0 && (
+              <span className="hidden sm:inline-flex text-[11px] text-indigo-600 dark:text-indigo-400 font-sans font-medium">
+                • Est. {getEstimatedReadText()}
+              </span>
+            )}
+          </div>
           <span>{formatTime(duration)}</span>
         </div>
       </div>

@@ -72,8 +72,15 @@ export class CloudTTSProvider implements ITTSProvider {
     text: string,
     settings: TTSSettings
   ): Promise<{ blob: Blob; mimeType: string }> {
-    // Map voiceId
-    const voiceName = settings.voiceId?.replace('cloud_', '') || 'Kore';
+    // Map voiceId to a valid Gemini prebuilt voice
+    let voiceName = 'Kore';
+    if (settings.voiceId?.startsWith('cloud_')) {
+      voiceName = settings.voiceId.replace('cloud_', '');
+    } else if (settings.voiceId?.toLowerCase().includes('male')) {
+      voiceName = 'Puck';
+    } else {
+      voiceName = 'Kore';
+    }
 
     const response = await fetch('/api/tts', {
       method: 'POST',

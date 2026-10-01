@@ -3,7 +3,7 @@ import { BrowserTTSProvider } from './BrowserTTSProvider';
 import { CloudTTSProvider } from './CloudTTSProvider';
 import { ITTSProvider, SpeakOptions } from './TTSProvider';
 import { generateVoiceFilename } from '../../utils/hindiUtils';
-import { generateSyntheticHindiWav, triggerDownload } from './WavHelper';
+import { triggerDownload } from './WavHelper';
 
 export class TTSManager {
   private browserProvider: BrowserTTSProvider;
@@ -67,15 +67,22 @@ export class TTSManager {
   }
 
   async speak(options: SpeakOptions): Promise<void> {
-    const provider = this.getActiveProvider();
+    const isCloudVoice = Boolean(options.settings.voiceId?.startsWith('cloud_'));
+    const isCloudRequested = options.settings.provider === 'cloud';
+    const useCloud = (isCloudVoice || isCloudRequested) && this.cloudAvailable;
+    const provider = useCloud ? this.cloudProvider : this.browserProvider;
+
     try {
       await provider.speak(options);
     } catch (err: any) {
       // If Cloud TTS fails or is quota-limited (429), seamlessly fall back to Browser Speech!
-      if (this.activeProviderType === 'cloud') {
+      if (provider === this.cloudProvider) {
         console.warn('Cloud TTS encountered error, switching to Browser TTS:', err?.message);
         this.activeProviderType = 'browser';
-        await this.browserProvider.speak(options);
+        await this.browserProvider.speak({
+          ...options,
+          settings: { ...options.settings, provider: 'browser' },
+        });
         return;
       }
       throw err;
@@ -83,7 +90,8 @@ export class TTSManager {
   }
 
   pause(): void {
-    this.getActiveProvider().pause();
+    this.browserProvider.pause();
+    this.cloudProvider.pause();
   }
 
   resume(): void {
@@ -96,7 +104,7 @@ export class TTSManager {
   }
 
   async replay(options: SpeakOptions): Promise<void> {
-    await this.getActiveProvider().replay(options);
+    await this.speak(options);
   }
 
   /**
@@ -109,46 +117,55 @@ export class TTSManager {
     volume: number = 100
   ): Promise<void> {
     const previewText = 'नमस्ते, यह हिंदी आवाज़ का परीक्षण है।';
+    const isCloudVoice = voiceId.startsWith('cloud_');
+    const providerType: ProviderType = isCloudVoice ? 'cloud' : 'browser';
+
     const settings: TTSSettings = {
       language: 'hi-IN',
       voiceId,
       speed,
       pitch,
       volume,
-      provider: this.activeProviderType,
+      provider: providerType,
     };
 
-    await this.speak({
-      text: previewText,
-      settings,
-    });
+    if (isCloudVoice && this.cloudAvailable) {
+      await this.cloudProvider.speak({
+        text: previewText,
+        settings,
+      });
+    } else {
+      await this.browserProvider.speak({
+        text: previewText,
+        settings,
+      });
+    }
   }
 
   /**
-   * Generates and downloads audio file as WAV.
+   * Generates and downloads audio file as genuine high-fidelity Hindi WAV speech.
    * Filename format: hindi-voice-YYYY-MM-DD-HH-MM.wav
    */
   async downloadAudio(
     text: string,
     settings: TTSSettings
-  ): Promise<{ filename: string; source: 'cloud' | 'synthetic' }> {
+  ): Promise<{ filename: string; source: 'cloud' }> {
     const filename = generateVoiceFilename('wav');
 
-    // 1. If user explicitly requested Cloud and it is available, attempt cloud WAV
-    if (settings.provider === 'cloud' && this.cloudAvailable) {
-      try {
-        const { blob } = await this.cloudProvider.generateAudioFile(text, settings);
-        triggerDownload(blob, filename);
-        return { filename, source: 'cloud' };
-      } catch (err) {
-        console.warn('Cloud audio export rate limited or failed, falling back to instant synthetic audio:', err);
+    try {
+      const { blob } = await this.cloudProvider.generateAudioFile(text, settings);
+      triggerDownload(blob, filename);
+      return { filename, source: 'cloud' };
+    } catch (err: any) {
+      if (err?.isQuotaExceeded || String(err?.message || '').includes('429')) {
+        throw new Error(
+          'Cloud audio export is experiencing high demand (rate limit reached). Please wait 10–15 seconds and try downloading again, or listen directly in the player.'
+        );
       }
+      throw new Error(
+        err?.message || 'Could not export speech audio. Please check your internet connection and try again.'
+      );
     }
-
-    // 2. Client-side audio generation (100% free, offline, zero quota limit)
-    const syntheticBlob = generateSyntheticHindiWav(text, settings.speed, settings.pitch);
-    triggerDownload(syntheticBlob, filename);
-    return { filename, source: 'synthetic' };
   }
 }
 

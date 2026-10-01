@@ -55,11 +55,6 @@ app.post('/api/tts', async (req: Request, res: Response) => {
     const validVoices = ['Kore', 'Puck', 'Fenrir', 'Zephyr', 'Charon'];
     const selectedVoice = validVoices.includes(voice) ? voice : 'Kore';
 
-    // We can guide the model to speak in clear Hindi
-    const speechInstruction = speed !== 1.0
-      ? `Speak naturally in standard Hindi at ${speed > 1.2 ? 'fast' : speed < 0.9 ? 'slow' : 'medium'} pace: ${text}`
-      : `Speak naturally in standard Hindi: ${text}`;
-
     const response = await ai.models.generateContent({
       model: 'gemini-3.8-flash-lite-tts',
       contents: [
@@ -67,7 +62,15 @@ app.post('/api/tts', async (req: Request, res: Response) => {
           role: 'user',
           parts: [
             {
-              text: speechInstruction,
+              text: text.trim(),
+              speechMetadata: {
+                style:
+                  speed > 1.2
+                    ? 'Fast-paced, clear Hindi pronunciation'
+                    : speed < 0.9
+                    ? 'Calm, slow, clear Hindi pronunciation'
+                    : 'Clear, natural Hindi pronunciation with authentic cadence',
+              },
             },
           ],
         },

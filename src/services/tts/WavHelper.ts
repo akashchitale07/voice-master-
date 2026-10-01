@@ -1,5 +1,5 @@
 /**
- * Audio / WAV generation utilities for Hindi Voice Studio
+ * Audio / WAV download utilities for Hindi Voice Studio
  */
 
 export function triggerDownload(blob: Blob, filename: string) {
@@ -67,53 +67,4 @@ export function audioBufferToWavBlob(
   }
 
   return new Blob([buffer], { type: 'audio/wav' });
-}
-
-/**
- * Generates an acoustic speech-cadence WAV preview for Hindi text offline
- * using harmonic formant synthesis when no cloud key is available.
- */
-export function generateSyntheticHindiWav(
-  text: string,
-  speed: number = 1.0,
-  pitchMultiplier: number = 1.0
-): Blob {
-  const sampleRate = 22050;
-  const words = text.trim().split(/\s+/).filter(Boolean);
-  const wordCount = Math.max(1, words.length);
-  // Estimate ~0.4s per word adjusted by speed
-  const durationSec = Math.max(1.5, Math.min(60, (wordCount * 0.45) / speed));
-  const numSamples = Math.floor(sampleRate * durationSec);
-  const channelData = new Float32Array(numSamples);
-
-  const baseFreq = 160 * pitchMultiplier; // Hindi fundamental vocal frequency (~160Hz)
-
-  // Modulated harmonic sound with natural speech cadence and pauses
-  for (let i = 0; i < numSamples; i++) {
-    const t = i / sampleRate;
-    // Word cadence envelope
-    const wordPhase = (t * speed * 2.2) % 1;
-    const syllableEnv = Math.sin(wordPhase * Math.PI);
-    
-    // Natural pitch inflection
-    const f0 = baseFreq * (1 + 0.08 * Math.sin(t * 3.5));
-    
-    // Vocal tract formants (F1, F2, F3) for Hindi vowel space
-    const f1 = 600 * pitchMultiplier;
-    const f2 = 1400 * pitchMultiplier;
-    const f3 = 2400;
-
-    const fundamental = Math.sin(2 * Math.PI * f0 * t);
-    const harmonic1 = 0.5 * Math.sin(2 * Math.PI * f1 * t);
-    const harmonic2 = 0.3 * Math.sin(2 * Math.PI * f2 * t);
-    const harmonic3 = 0.15 * Math.sin(2 * Math.PI * f3 * t);
-
-    // Combine with soft envelope
-    const rawVoice = (fundamental + harmonic1 + harmonic2 + harmonic3) * 0.25;
-    const sample = rawVoice * Math.max(0, syllableEnv);
-
-    channelData[i] = sample;
-  }
-
-  return audioBufferToWavBlob({ sampleRate, channelData });
 }

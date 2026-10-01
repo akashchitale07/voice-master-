@@ -108,10 +108,10 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
               {/* If no voices loaded at all, provide standard requested presets */}
               {voices.length === 0 && (
                 <>
-                  <option value="preset_hindi_female">👩 Hindi Female</option>
-                  <option value="preset_hindi_male">👨 Hindi Male</option>
-                  <option value="preset_hindi_female_natural">✨ Hindi Female – Natural</option>
-                  <option value="preset_hindi_male_natural">✨ Hindi Male – Natural</option>
+                  <option value="browser_preset_female">👩 Hindi Female (Browser Free)</option>
+                  <option value="browser_preset_male">👨 Hindi Male (Browser Free)</option>
+                  <option value="browser_preset_female_natural">✨ Hindi Female – Natural (Browser Free)</option>
+                  <option value="browser_preset_male_natural">✨ Hindi Male – Natural (Browser Free)</option>
                 </>
               )}
             </select>

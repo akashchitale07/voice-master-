@@ -220,11 +220,12 @@ export class BrowserTTSProvider implements ITTSProvider {
 
     // Apply voice
     let pitch = Math.max(0.5, Math.min(2.0, settings.pitch || 1.0));
+    const allVoices = window.speechSynthesis.getVoices();
+
     if (settings.voiceId) {
-      if (settings.voiceId.startsWith('browser_preset_')) {
+      if (settings.voiceId.startsWith('browser_preset_') || settings.voiceId.startsWith('preset_')) {
         utterance.lang = 'hi-IN';
-        const allVoices = window.speechSynthesis.getVoices();
-        const preferred = allVoices.find((v) => v.lang.startsWith('hi')) || allVoices.find((v) => v.default) || allVoices[0];
+        const preferred = allVoices.find((v) => v.lang.toLowerCase().startsWith('hi')) || allVoices.find((v) => v.default) || allVoices[0];
         if (preferred) utterance.voice = preferred;
 
         if (settings.voiceId.includes('female')) {
@@ -232,19 +233,33 @@ export class BrowserTTSProvider implements ITTSProvider {
         } else if (settings.voiceId.includes('male')) {
           pitch = Math.max(0.5, pitch * 0.88);
         }
+      } else if (settings.voiceId.startsWith('cloud_')) {
+        // Fallback for cloud IDs in browser provider
+        utterance.lang = 'hi-IN';
+        const preferred = allVoices.find((v) => v.lang.toLowerCase().startsWith('hi')) || allVoices.find((v) => v.default) || allVoices[0];
+        if (preferred) utterance.voice = preferred;
+        const isFemale = settings.voiceId.includes('Kore') || settings.voiceId.includes('Zephyr');
+        pitch = isFemale ? Math.min(2.0, pitch * 1.15) : Math.max(0.5, pitch * 0.88);
       } else {
-        const allVoices = window.speechSynthesis.getVoices();
         const matched = allVoices.find(
-          (v) => `browser_${v.name}_${v.lang}` === settings.voiceId || v.name === settings.voiceId
+          (v) =>
+            `browser_${v.name}_${v.lang}` === settings.voiceId ||
+            v.name === settings.voiceId ||
+            v.voiceURI === settings.voiceId ||
+            settings.voiceId.includes(v.name)
         );
         if (matched) {
           utterance.voice = matched;
           utterance.lang = matched.lang || 'hi-IN';
         } else {
+          const fallback = allVoices.find((v) => v.lang.toLowerCase().startsWith('hi')) || allVoices.find((v) => v.default) || allVoices[0];
+          if (fallback) utterance.voice = fallback;
           utterance.lang = 'hi-IN';
         }
       }
     } else {
+      const fallback = allVoices.find((v) => v.lang.toLowerCase().startsWith('hi')) || allVoices.find((v) => v.default) || allVoices[0];
+      if (fallback) utterance.voice = fallback;
       utterance.lang = 'hi-IN';
     }
 

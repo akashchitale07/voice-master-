@@ -152,20 +152,31 @@ export class TTSManager {
   ): Promise<{ filename: string; source: 'cloud' }> {
     const filename = generateVoiceFilename('wav');
 
-    try {
-      const { blob } = await this.cloudProvider.generateAudioFile(text, settings);
-      triggerDownload(blob, filename);
-      return { filename, source: 'cloud' };
-    } catch (err: any) {
-      if (err?.isQuotaExceeded || String(err?.message || '').includes('429')) {
-        throw new Error(
-          'Cloud audio export is experiencing high demand (rate limit reached). Please wait 10–15 seconds and try downloading again, or listen directly in the player.'
-        );
+    let lastError: any = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        if (attempt > 0) {
+          // Automatic brief retry delay
+          await new Promise((r) => setTimeout(r, 2500));
+        }
+        const { blob } = await this.cloudProvider.generateAudioFile(text, settings);
+        triggerDownload(blob, filename);
+        return { filename, source: 'cloud' };
+      } catch (err: any) {
+        lastError = err;
+        const isQuota = err?.isQuotaExceeded || String(err?.message || '').includes('429');
+        if (!isQuota) break;
       }
+    }
+
+    if (lastError?.isQuotaExceeded || String(lastError?.message || '').includes('429')) {
       throw new Error(
-        err?.message || 'Could not export speech audio. Please check your internet connection and try again.'
+        'Cloud audio export is experiencing high demand (rate limit reached). Please wait a few seconds and try downloading again, or listen directly in the player.'
       );
     }
+    throw new Error(
+      lastError?.message || 'Could not export speech audio. Please check your internet connection and try again.'
+    );
   }
 }
 

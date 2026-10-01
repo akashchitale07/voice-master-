@@ -26,7 +26,14 @@ app.get('/api/status', (_req: Request, res: Response) => {
   });
 });
 
-// Cloud TTS synthesis endpoint (Optional high-fidelity cloud provider)
+// In-memory audio synthesis cache (up to 150 items) to prevent redundant API calls
+const audioCache = new Map<string, { audioBase64: string; mimeType: string }>();
+
+function getCacheKey(text: string, voice: string, speed: number): string {
+  return `${voice}_${speed.toFixed(2)}_${text.trim()}`;
+}
+
+// Cloud TTS synthesis endpoint (High-fidelity cloud provider with dual-model fallback & caching)
 app.post('/api/tts', async (req: Request, res: Response) => {
   try {
     const { text, voice = 'Kore', speed = 1.0, pitch = 1.0 } = req.body;
@@ -39,6 +46,27 @@ app.post('/api/tts', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Text exceeds maximum length of 50,000 characters for Cloud TTS. Browser TTS supports unlimited text.' });
     }
 
+    const trimmed = text.trim();
+
+    // Voice mapping for Gemini TTS prebuilt voices:
+    // Female: 'Kore' (Clear, natural), 'Zephyr' (Warm, gentle)
+    // Male: 'Puck' (Energetic, natural), 'Fenrir' (Deep, steady), 'Charon' (Authoritative)
+    const validVoices = ['Kore', 'Puck', 'Fenrir', 'Zephyr', 'Charon'];
+    const selectedVoice = validVoices.includes(voice) ? voice : 'Kore';
+
+    // 1. Check in-memory cache first
+    const cacheKey = getCacheKey(trimmed, selectedVoice, speed);
+    const cached = audioCache.get(cacheKey);
+    if (cached) {
+      return res.json({
+        audioBase64: cached.audioBase64,
+        mimeType: cached.mimeType,
+        provider: 'cloud',
+        voice: selectedVoice,
+        cached: true,
+      });
+    }
+
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       return res.status(503).json({
@@ -49,50 +77,68 @@ app.post('/api/tts', async (req: Request, res: Response) => {
 
     const ai = new GoogleGenAI({ apiKey });
 
-    // Voice mapping for Gemini TTS prebuilt voices:
-    // Female: 'Kore' (Clear, natural), 'Zephyr' (Warm, gentle)
-    // Male: 'Puck' (Energetic, natural), 'Fenrir' (Deep, steady), 'Charon' (Authoritative)
-    const validVoices = ['Kore', 'Puck', 'Fenrir', 'Zephyr', 'Charon'];
-    const selectedVoice = validVoices.includes(voice) ? voice : 'Kore';
+    // Models to try in sequence: flagship 'gemini-3.8-flash-tts' then 'gemini-3.8-flash-lite-tts'
+    const candidateModels = ['gemini-3.8-flash-tts', 'gemini-3.8-flash-lite-tts'];
+    let lastError: any = null;
+    let base64Audio: string | undefined;
+    let mimeType: string = 'audio/wav';
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash-lite-tts',
-      contents: [
-        {
-          role: 'user',
-          parts: [
+    for (const model of candidateModels) {
+      try {
+        const response = await ai.models.generateContent({
+          model,
+          contents: [
             {
-              text: text.trim(),
-              speechMetadata: {
-                style:
-                  speed > 1.2
-                    ? 'Fast-paced, clear Hindi pronunciation'
-                    : speed < 0.9
-                    ? 'Calm, slow, clear Hindi pronunciation'
-                    : 'Clear, natural Hindi pronunciation with authentic cadence',
-              },
+              role: 'user',
+              parts: [
+                {
+                  text: trimmed,
+                  speechMetadata: {
+                    style:
+                      speed > 1.2
+                        ? 'Fast-paced, clear Hindi pronunciation'
+                        : speed < 0.9
+                        ? 'Calm, slow, clear Hindi pronunciation'
+                        : 'Clear, natural Hindi pronunciation with authentic cadence',
+                  },
+                },
+              ],
             },
           ],
-        },
-      ],
-      config: {
-        responseModalities: ['AUDIO'],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: {
-              voiceName: selectedVoice,
+          config: {
+            responseModalities: ['AUDIO'],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: {
+                  voiceName: selectedVoice,
+                },
+              },
             },
           },
-        },
-      },
-    });
+        });
 
-    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-    const mimeType = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.mimeType || 'audio/wav';
+        base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+        mimeType = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.mimeType || 'audio/wav';
+
+        if (base64Audio) {
+          break; // Succeeded!
+        }
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`TTS attempt with model ${model} failed:`, err?.message || err);
+      }
+    }
 
     if (!base64Audio) {
-      return res.status(500).json({ error: 'No audio data was returned from the cloud TTS model.' });
+      throw lastError || new Error('No audio data returned from any speech synthesis model.');
     }
+
+    // Cache result (keep cache size <= 150)
+    if (audioCache.size >= 150) {
+      const firstKey = audioCache.keys().next().value;
+      if (firstKey) audioCache.delete(firstKey);
+    }
+    audioCache.set(cacheKey, { audioBase64: base64Audio, mimeType });
 
     return res.json({
       audioBase64: base64Audio,

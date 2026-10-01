@@ -1,0 +1,6 @@
+{
+  "name": "Hindi Voice Studio",
+  "description": "Convert Hindi text into natural-sounding speech with customizable voice, speed, pitch, and download options.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

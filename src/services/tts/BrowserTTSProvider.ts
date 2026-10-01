@@ -55,11 +55,51 @@ export class BrowserTTSProvider implements ITTSProvider {
             name: v.name,
             lang: v.lang,
             gender,
-            isDefault: v.default || index === 0,
+            isDefault: index === 0,
             provider: 'browser',
             nativeVoice: v,
           };
         });
+
+        // Always guarantee default Hindi browser voices even if OS has not installed an explicit hi-IN voice pack
+        if (formatted.length === 0) {
+          const defaultNative = rawVoices.find((v) => v.default) || rawVoices[0];
+          formatted.push(
+            {
+              id: 'browser_preset_female',
+              name: 'Hindi Female (Browser Free)',
+              lang: 'hi-IN',
+              gender: 'female',
+              isDefault: true,
+              provider: 'browser',
+              nativeVoice: defaultNative,
+            },
+            {
+              id: 'browser_preset_male',
+              name: 'Hindi Male (Browser Free)',
+              lang: 'hi-IN',
+              gender: 'male',
+              provider: 'browser',
+              nativeVoice: defaultNative,
+            },
+            {
+              id: 'browser_preset_female_natural',
+              name: 'Hindi Female – Natural (Browser Free)',
+              lang: 'hi-IN',
+              gender: 'female',
+              provider: 'browser',
+              nativeVoice: defaultNative,
+            },
+            {
+              id: 'browser_preset_male_natural',
+              name: 'Hindi Male – Natural (Browser Free)',
+              lang: 'hi-IN',
+              gender: 'male',
+              provider: 'browser',
+              nativeVoice: defaultNative,
+            }
+          );
+        }
 
         resolve(formatted);
       };
@@ -179,23 +219,37 @@ export class BrowserTTSProvider implements ITTSProvider {
     const speed = Math.max(0.5, Math.min(2.0, settings.speed || 1.0));
 
     // Apply voice
+    let pitch = Math.max(0.5, Math.min(2.0, settings.pitch || 1.0));
     if (settings.voiceId) {
-      const allVoices = window.speechSynthesis.getVoices();
-      const matched = allVoices.find(
-        (v) => `browser_${v.name}_${v.lang}` === settings.voiceId || v.name === settings.voiceId
-      );
-      if (matched) {
-        utterance.voice = matched;
-        utterance.lang = matched.lang || 'hi-IN';
-      } else {
+      if (settings.voiceId.startsWith('browser_preset_')) {
         utterance.lang = 'hi-IN';
+        const allVoices = window.speechSynthesis.getVoices();
+        const preferred = allVoices.find((v) => v.lang.startsWith('hi')) || allVoices.find((v) => v.default) || allVoices[0];
+        if (preferred) utterance.voice = preferred;
+
+        if (settings.voiceId.includes('female')) {
+          pitch = Math.min(2.0, pitch * 1.15);
+        } else if (settings.voiceId.includes('male')) {
+          pitch = Math.max(0.5, pitch * 0.88);
+        }
+      } else {
+        const allVoices = window.speechSynthesis.getVoices();
+        const matched = allVoices.find(
+          (v) => `browser_${v.name}_${v.lang}` === settings.voiceId || v.name === settings.voiceId
+        );
+        if (matched) {
+          utterance.voice = matched;
+          utterance.lang = matched.lang || 'hi-IN';
+        } else {
+          utterance.lang = 'hi-IN';
+        }
       }
     } else {
       utterance.lang = 'hi-IN';
     }
 
     utterance.rate = speed;
-    utterance.pitch = Math.max(0.5, Math.min(2.0, settings.pitch || 1.0));
+    utterance.pitch = pitch;
     utterance.volume = Math.max(0, Math.min(1.0, (settings.volume ?? 100) / 100));
 
     // Handle boundary (word tracking with offset)

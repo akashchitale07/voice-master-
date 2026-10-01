@@ -35,7 +35,6 @@ export class CloudTTSProvider implements ITTSProvider {
         name: 'Hindi Female – Natural (Kore)',
         lang: 'hi-IN',
         gender: 'female',
-        isDefault: true,
         provider: 'cloud',
       },
       {
@@ -89,7 +88,15 @@ export class CloudTTSProvider implements ITTSProvider {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || `Server responded with status ${response.status}`);
+      const err = new Error(
+        errorData.error ||
+          (response.status === 429
+            ? 'Cloud speech quota exceeded. Switching to Free Browser Speech.'
+            : `Server responded with status ${response.status}`)
+      );
+      (err as any).isQuotaExceeded = response.status === 429 || errorData.isQuotaExceeded;
+      (err as any).fallbackToBrowser = Boolean(errorData.fallbackToBrowser);
+      throw err;
     }
 
     const data = await response.json();

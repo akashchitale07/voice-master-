@@ -17,6 +17,8 @@ interface TextEditorProps {
   onChange: (value: string) => void;
   speed: number;
   onClear: () => void;
+  provider?: 'browser' | 'cloud';
+  cloudCharLimit?: number;
 }
 
 export const TextEditor: React.FC<TextEditorProps> = ({
@@ -24,6 +26,8 @@ export const TextEditor: React.FC<TextEditorProps> = ({
   onChange,
   speed,
   onClear,
+  provider = 'browser',
+  cloudCharLimit = 5000,
 }) => {
   const [showPreview, setShowPreview] = useState(false);
   const [showSampleMenu, setShowSampleMenu] = useState(false);
@@ -182,11 +186,13 @@ export const TextEditor: React.FC<TextEditorProps> = ({
       </div>
 
       {/* Bottom Counter Bar */}
-      <div className="px-4 py-2.5 bg-slate-50/60 dark:bg-slate-800/20 border-t border-slate-200 dark:border-slate-800">
+      <div className="px-4 py-3 bg-slate-50/70 dark:bg-slate-800/40 border-t border-slate-200 dark:border-slate-800">
         <CharacterCounter
           currentChars={stats.chars}
           wordCount={stats.words}
           hindiPercentage={hindiDetection.hindiPercentage}
+          cloudCharLimit={cloudCharLimit}
+          provider={provider}
         />
       </div>
 

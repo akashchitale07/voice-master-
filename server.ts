@@ -98,9 +98,25 @@ app.post('/api/tts', async (req: Request, res: Response) => {
       voice: selectedVoice,
     });
   } catch (error: any) {
-    console.error('Cloud TTS error:', error);
+    const rawMsg = String(error?.message || '');
+    const isQuotaExceeded =
+      rawMsg.includes('429') ||
+      rawMsg.includes('RESOURCE_EXHAUSTED') ||
+      rawMsg.includes('Quota exceeded') ||
+      rawMsg.includes('quota');
+
+    if (isQuotaExceeded) {
+      console.warn('Cloud TTS quota reached (429). Client will use Free Browser Speech.');
+      return res.status(429).json({
+        error: 'Cloud quota limit reached. Please use Free Browser Speech for unlimited speech without quota limits.',
+        isQuotaExceeded: true,
+        fallbackToBrowser: true,
+      });
+    }
+
+    console.warn('Cloud TTS unavailable:', error?.message || error);
     return res.status(500).json({
-      error: error?.message || 'Failed to synthesize speech using cloud provider.',
+      error: 'Failed to synthesize speech using cloud provider. Please use Free Browser Speech.',
       fallbackToBrowser: true,
     });
   }

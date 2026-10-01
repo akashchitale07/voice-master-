@@ -154,13 +154,21 @@ export default function App() {
       ];
       setVoices(combinedVoices);
 
-      // Select default voice if not selected
-      if (!settings.voiceId && combinedVoices.length > 0) {
-        const defaultVoice =
-          combinedVoices.find((v) => v.isDefault) || combinedVoices[0];
+      // Select default browser voice
+      const defaultBrowserVoice =
+        voiceData.browserVoices.find((v) => v.isDefault) || voiceData.browserVoices[0];
+
+      if (defaultBrowserVoice && (!settings.voiceId || settings.voiceId.startsWith('cloud_') && settings.provider === 'browser')) {
         setSettings((prev) => ({
           ...prev,
-          voiceId: defaultVoice.id,
+          provider: 'browser',
+          voiceId: defaultBrowserVoice.id,
+        }));
+      } else if (!settings.voiceId && combinedVoices.length > 0) {
+        const fallbackVoice = combinedVoices.find((v) => v.isDefault) || combinedVoices[0];
+        setSettings((prev) => ({
+          ...prev,
+          voiceId: fallbackVoice.id,
         }));
       }
 
@@ -298,15 +306,30 @@ export default function App() {
             currentWord: word,
           }));
         },
-        onError: (err) => {
+        onError: (err: any) => {
+          const isQuota =
+            err?.isQuotaExceeded ||
+            String(err?.message || '').includes('429') ||
+            String(err?.message || '').includes('quota') ||
+            String(err?.message || '').includes('RESOURCE_EXHAUSTED');
+
+          if (isQuota) {
+            handleSelectProvider('browser');
+            setErrorMessage(
+              'Cloud rate limit reached. Automatically switched to 100% Free & Unlimited Browser Speech.'
+            );
+            setErrorType('info');
+          } else {
+            setErrorMessage(err?.message || 'Error occurred during speech synthesis.');
+            setErrorType('error');
+          }
+
           setPlaybackState((prev) => ({
             ...prev,
             isPlaying: false,
             isPaused: false,
             isGenerating: false,
           }));
-          setErrorMessage(err.message || 'Error occurred during speech synthesis.');
-          setErrorType('error');
         },
       });
 
@@ -328,6 +351,75 @@ export default function App() {
         return [newItem, ...filtered].slice(0, 15);
       });
     } catch (err: any) {
+      const isQuota =
+        err?.isQuotaExceeded ||
+        String(err?.message || '').includes('429') ||
+        String(err?.message || '').includes('quota') ||
+        String(err?.message || '').includes('RESOURCE_EXHAUSTED');
+
+      if (isQuota) {
+        handleSelectProvider('browser');
+        setErrorMessage(
+          'Cloud rate limit reached. Automatically switched to 100% Free & Unlimited Browser Speech. Starting playback...'
+        );
+        setErrorType('info');
+
+        // Automatically retry with Browser TTS so the user doesn't even have to click again
+        try {
+          await ttsManager.speak({
+            text: trimmed,
+            settings: { ...settings, provider: 'browser' },
+            onStart: () => {
+              setHasGenerated(true);
+              setPlaybackState((prev) => ({
+                ...prev,
+                isPlaying: true,
+                isPaused: false,
+                isGenerating: false,
+              }));
+            },
+            onPause: () => {
+              setPlaybackState((prev) => ({
+                ...prev,
+                isPlaying: false,
+                isPaused: true,
+              }));
+            },
+            onResume: () => {
+              setPlaybackState((prev) => ({
+                ...prev,
+                isPlaying: true,
+                isPaused: false,
+              }));
+            },
+            onEnd: () => {
+              setPlaybackState((prev) => ({
+                ...prev,
+                isPlaying: false,
+                isPaused: false,
+                currentWord: '',
+              }));
+            },
+            onProgress: (current, duration) => {
+              setPlaybackState((prev) => ({
+                ...prev,
+                currentTime: current,
+                duration: Math.max(prev.duration, duration),
+              }));
+            },
+            onBoundary: (_charIndex, _charLength, word) => {
+              setPlaybackState((prev) => ({
+                ...prev,
+                currentWord: word,
+              }));
+            },
+          });
+          return;
+        } catch (retryErr: any) {
+          console.error('Browser retry error:', retryErr);
+        }
+      }
+
       setPlaybackState((prev) => ({
         ...prev,
         isGenerating: false,
@@ -477,6 +569,7 @@ export default function App() {
               text={text}
               onChange={setText}
               speed={settings.speed}
+              provider={settings.provider}
               onClear={() => {
                 setText('');
                 handleStop();

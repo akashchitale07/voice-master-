@@ -68,7 +68,18 @@ export class TTSManager {
 
   async speak(options: SpeakOptions): Promise<void> {
     const provider = this.getActiveProvider();
-    await provider.speak(options);
+    try {
+      await provider.speak(options);
+    } catch (err: any) {
+      // If Cloud TTS fails or is quota-limited (429), seamlessly fall back to Browser Speech!
+      if (this.activeProviderType === 'cloud') {
+        console.warn('Cloud TTS encountered error, switching to Browser TTS:', err?.message);
+        this.activeProviderType = 'browser';
+        await this.browserProvider.speak(options);
+        return;
+      }
+      throw err;
+    }
   }
 
   pause(): void {
@@ -123,18 +134,18 @@ export class TTSManager {
   ): Promise<{ filename: string; source: 'cloud' | 'synthetic' }> {
     const filename = generateVoiceFilename('wav');
 
-    // 1. If cloud is available, generate high quality WAV
-    if (this.cloudAvailable) {
+    // 1. If user explicitly requested Cloud and it is available, attempt cloud WAV
+    if (settings.provider === 'cloud' && this.cloudAvailable) {
       try {
         const { blob } = await this.cloudProvider.generateAudioFile(text, settings);
         triggerDownload(blob, filename);
         return { filename, source: 'cloud' };
       } catch (err) {
-        console.warn('Cloud audio export failed, falling back to synthetic audio:', err);
+        console.warn('Cloud audio export rate limited or failed, falling back to instant synthetic audio:', err);
       }
     }
 
-    // 2. Fallback: generate synthetic WAV audio buffer client-side
+    // 2. Client-side audio generation (100% free, offline, zero quota limit)
     const syntheticBlob = generateSyntheticHindiWav(text, settings.speed, settings.pitch);
     triggerDownload(syntheticBlob, filename);
     return { filename, source: 'synthetic' };
